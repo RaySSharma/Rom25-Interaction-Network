@@ -1,0 +1,15 @@
+{
+  "SIMULATION": {
+    "SIM_DIR": "/path/to/simulation_directory/",
+    "TANGOS_DB": "cosmo25",
+    "TANGOS_ORIGINAL_TIMESTEP": "7779",
+    "OUT_FILE": "/path/to/output/directory/interaction_network.hdf5",
+    "OUT_AHF": "/path/to/output/directory/ahf_halos.hdf5"
+  },
+  "DIN": {
+    "min_ndm": "1e4",
+    "max_neighbor_physical_dist": "1500",
+    "boxsize_comoving": "25e3",
+    "h": "0.67769315"
+  }
+}
