@@ -19,7 +19,8 @@ class StarProperties(BaseProperties):
         Args:
             halo_num (int): halo number at desired step
         """
-        mstar_max = self._calc_halo_mstar_max(self.data)
+        mstar_max = self._calc_halo_mstar_max(self.network)
+        v_over_sigma = self._calc_v_over_sigma(self.network)
         return mstar_max
 
     def _calc_halo_mstar_max(self, data):

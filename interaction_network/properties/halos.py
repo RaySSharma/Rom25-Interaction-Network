@@ -20,7 +20,7 @@ class HaloProperties(BaseProperties):
         Args:
             halo_num (int): halo number at desired step
         """
-        mvir_max = self._calc_halo_mvir_max(self.data)
+        mvir_max = self._calc_halo_mvir_max(self.network)
         return mvir_max
 
     def _calc_halo_mvir_max(self, data):
