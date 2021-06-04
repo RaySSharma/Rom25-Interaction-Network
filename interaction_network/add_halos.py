@@ -1,40 +1,25 @@
-import argparse
 import glob
-import json
-import pathlib
-from json.decoder import JSONDecodeError
 
 import numpy as np
 import pandas as pd
 import tangos as db
 import tqdm
 
-CONFIG = pathlib.Path() / "config.json"
+from . import read_json, get_halos, CONFIG
 
 
-def read_json(file_path):
-    with open(file_path, "r") as f:
-        try:
-            return json.load(f)
-        except (FileNotFoundError, JSONDecodeError) as err:
-            print(err, "Invalid JSON config")
+class EstablishNetwork:
 
+    names = [
+        "halo_num_neighbor",
+        "mvir_neighbor",
+        "theta_neighbor",
+        "dist_neighbor",
+        "halo_num_prog",
+        "timestep",
+        "z",
+    ]
 
-def get_halos(filename):
-    """Generate list of halos from input file
-
-    Args:
-        filename (str): list of halos, one per line
-
-    Returns:
-        numpy.ndarray: list of halo number integers
-    """
-    with open(filename, "r") as f:
-        lines = f.read().splitlines()
-    return [int(h) for h in lines]
-
-
-class DwarfInteractionNetwork:
     def __init__(self, config_filename=None, verbose=False):
         if config_filename is None:
             config = read_json(CONFIG)
@@ -52,17 +37,6 @@ class DwarfInteractionNetwork:
         self.h = float(self.dim_config["h"])
 
         self.ahf_halos = self.read_ahf_halos()
-        self.save_ahf_halos()
-
-        self.names = [
-            "neighbor_halo_num",
-            "mvir",
-            "theta",
-            "dist",
-            "halo_num",
-            "timestep",
-            "z",
-        ]
 
     def get_ahf_filenames(self):
         """Gather filenames of *AHF_halos files from simulation directory
@@ -117,12 +91,14 @@ class DwarfInteractionNetwork:
         try:
             return pd.read_hdf(self.sim_config["OUT_AHF"], key="data")
         except OSError:
-            return pd.concat(
+            ahf_halos = pd.concat(
                 [self.get_ahf_props(filename) for filename in self.ahf_filenames]
             )
+            self.save_ahf_halos(ahf_halos)
+            return ahf_halos
 
-    def save_ahf_halos(self):
-        self.ahf_halos.to_hdf(self.sim_config["OUT_AHF"], key="data")
+    def save_ahf_halos(self, ahf_halos):
+        ahf_halos.to_hdf(self.sim_config["OUT_AHF"], key="data")
 
     def get_ahf_props(self, filename):
         """Gather properties from *.AHF_halos file into Pandas DataFrame
@@ -156,7 +132,7 @@ class DwarfInteractionNetwork:
         )
         return df
 
-    def query(self, halo_num_original):
+    def populate_halo(self, halo_num_original):
         """Generate interaction parameters for given halo
 
         Args:
@@ -201,7 +177,9 @@ class DwarfInteractionNetwork:
         max_dist_comoving = self.max_dist / a
         step_num = self.get_timestep_number(halo)
 
-        neighbors = self.ahf_halos.query("timestep == @step_num").reset_index(drop=True)
+        neighbors = self.ahf_halos.loc[self.ahf_halos.timestep == step_num].reset_index(
+            drop=True
+        )
         neighbor_coords = neighbors[["x", "y", "z"]].values
         neighbor_coords_relative = self.periodic_wrap(
             halo_coords, neighbor_coords, self.L
@@ -253,17 +231,19 @@ class DwarfInteractionNetwork:
     def calc_distance_neighbor(self, neighbors):
         return neighbors["r"].values
 
-    def save_interaction_network(self, halo_num, data):
+    def establish_network(self, halo_num, data, names):
         """Save to disk
 
         Args:
             data (numpy.ndarray): Data array
         """
-        df = pd.DataFrame(data, columns=self.names)
+        df = pd.DataFrame(data, columns=names)
         df.to_hdf(self.sim_config["OUT_FILE"], key="r" + str(halo_num))
 
 
 if __name__ == "__main__":
+    import argparse
+
     parser = argparse.ArgumentParser(
         description="Calculate halo interaction network for input Romulus25 halo at step 7779"
     )
@@ -280,8 +260,8 @@ if __name__ == "__main__":
     if verbose:
         halo_numbers = tqdm.tqdm(halo_numbers)
 
-    din = DwarfInteractionNetwork(config_filename=CONFIG, verbose=verbose)
+    network = EstablishNetwork(config_filename=CONFIG, verbose=verbose)
 
     for halo_number in halo_numbers:
-        data = np.vstack(din.query(halo_number))
-        din.save_interaction_network(halo_number, data)
+        data = np.vstack(network.populate_halo(halo_number))
+        network.establish_network(halo_number, data, network.names)

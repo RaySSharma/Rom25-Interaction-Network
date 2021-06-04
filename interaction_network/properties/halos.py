@@ -1,62 +1,29 @@
-import argparse
-import json
-import pathlib
-
-import numpy as np
 import pandas as pd
-import tangos as db
 import tqdm
+import tangos as db
+import numpy as np
+import pathlib
 import pynbody
-
-import generate
-from generate import DwarfInteractionNetwork
+from . import BaseProperties
 
 
-def read_json(file_path):
-    with open(file_path, "r") as f:
-        return json.load(f)
+class HaloProperties(BaseProperties):
 
+    names = ["mvir_max_neighbor"]
 
-def get_halos(filename):
-    """Generate list of halos from input file
-
-    Args:
-        filename (str): list of halos, one per line
-
-    Returns:
-        numpy.ndarray: list of halo number integers
-    """
-    with open(filename, "r") as f:
-        lines = f.read().splitlines()
-    return [int(h) for h in lines]
-
-
-class AddSnapshotProperties(DwarfInteractionNetwork):
     def __init__(self, config_filename=None, verbose=False):
-
         super().__init__(config_filename=config_filename, verbose=verbose)
 
-    def read_interaction_network(self, halo_num):
-        filename = self.sim_config["OUT_FILE"]
-        df = pd.read_hdf(filename, key="r" + str(halo_num))
-        return df
-
-    def query(self, halo_num):
+    def calculate(self):
         """Generate interaction parameters for given halo
 
         Args:
             halo_num (int): halo number at desired step
         """
-        data = self.read_interaction_network(halo_num)
-        data = self.calc_properties(data)
-        return data
+        mvir_max = self._calc_halo_mvir_max(self.data)
+        return mvir_max
 
-    def calc_properties(self, data):
-        data["Mvir_max"] = self.calc_halo_mvir_max(data)
-        data['Mstar_max'] = self.calc_halo_mstar_max(data)
-        return data
-
-    def calc_halo_mvir_max(self, data):
+    def _calc_halo_mvir_max(self, data):
         """Iterate over each most significant neighbor, trace each of their progenitors back in time, and find max virial max from AHF
 
         Args:
@@ -98,7 +65,7 @@ class AddSnapshotProperties(DwarfInteractionNetwork):
             mvir_max_arr.append(mvir_max)
         return np.asarray(mvir_max_arr)
 
-    def calc_halo_mstar_max(self, data):
+    def _calc_halo_mstar_max(self, data):
         """Iterate over each most significant neighbor, trace each of their progenitors back in time, and find max stellar max from AHF
 
         Args:
@@ -127,9 +94,8 @@ class AddSnapshotProperties(DwarfInteractionNetwork):
                     prog_halo_num = int(prog.halo_number)
                     prog_timestep = str(self.get_timestep_number(prog))
 
-                    snapshot_name = (
-                        pathlib.Path(self.sim_config["SIM_DIR"])
-                        .glob("*00" + prog_timestep)
+                    snapshot_name = pathlib.Path(self.sim_config["SIM_DIR"]).glob(
+                        "*00" + prog_timestep
                     )
                     snapshot_name = next(snapshot_name).as_posix()
                     prog_halo = (
@@ -150,38 +116,3 @@ class AddSnapshotProperties(DwarfInteractionNetwork):
 
             mstar_max_arr.append(mstar_max)
         return np.asarray(mstar_max_arr)
-
-    def save_interaction_network(self, halo_num, df):
-        """Save to disk
-
-        Args:
-            halo_num (int): Halo number
-            df (pandas.DataFrame): DataFrame containing interaction network
-        """
-        df.to_hdf(self.sim_config["OUT_FILE"], key="r" + str(halo_num))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Append new properties to the halo interaction network for input Romulus25 halo at step 7779"
-    )
-    parser.add_argument("--halos", help="File containing halo numbers at step 7779")
-    parser.add_argument("--verbose", help="Verbose", action="store_true")
-    args = parser.parse_args()
-
-    verbose = bool(args.verbose)
-    config = read_json(generate.CONFIG)
-    args = parser.parse_args()
-
-    halo_numbers = get_halos(args.halos)
-    assert len(halo_numbers) > 0
-    assert type(halo_numbers[0]) == int
-
-    if verbose:
-        halo_numbers = tqdm.tqdm(halo_numbers)
-
-    din = AddSnapshotProperties(config_filename=generate.CONFIG)
-
-    for halo_number in halo_numbers:
-        data = din.query(halo_number)
-        din.save_interaction_network(halo_number, data)
